@@ -1,61 +1,93 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import socket from "../socket"; // import your shared socket connection
+import socket from "../socket";
 
 export default function SelectWord() {
   const navigate = useNavigate();
-  const [isPlayer1, setIsPlayer1] = useState(false);
+  const [isWordSetter, setIsWordSetter] = useState(false);
   const [word, setWord] = useState("");
+  const [players, setPlayers] = useState({ p1: "", p2: "" });
+  const [currentWordSetter, setCurrentWordSetter] = useState("");
+  const [waitingMessage, setWaitingMessage] = useState("");
 
   useEffect(() => {
-    // Ask server if we are player 1 or player 2
     socket.emit("whoAmI");
 
     socket.on("youAre", (data) => {
-      setIsPlayer1(data.player === 1);
+      setIsWordSetter(data.player === 1);
     });
 
-    socket.on("wordChosen", () => {
-      navigate("/game");
+    socket.on("startSelectWord", (data) => {
+      setPlayers(data.players);
+      setCurrentWordSetter(data.currentWordSetter);
+      setWaitingMessage(`Waiting for ${data.currentWordSetter} to choose a word...`);
     });
+
+    socket.on("nextRound", (data) => {
+      setCurrentWordSetter(data.newWordSetter);
+      setWaitingMessage(`Waiting for ${data.newWordSetter} to choose a word...`);
+      // Check if current user is the new word setter
+      socket.emit("whoAmI");
+    });
+
+    socket.on("startGame", () => navigate("/game"));
 
     return () => {
       socket.off("youAre");
-      socket.off("wordChosen");
+      socket.off("startSelectWord");
+      socket.off("nextRound");
+      socket.off("startGame");
     };
   }, [navigate]);
 
-  const submitWord = () => {
+  const submitCustomWord = () => {
     if (!word.trim()) return;
-    socket.emit("submitWord", word);
+    socket.emit("submitWord", { type: "custom", word: word.trim() });
   };
 
-  if (!isPlayer1) {
+  const requestRandomWord = () => {
+    socket.emit("submitWord", { type: "random" });
+  };
+
+  if (!isWordSetter) {
     return (
-      <div style={{ padding: "2rem" }}>
-        <h2>Waiting for Player 1 to choose a word...</h2>
+      <div style={{ padding: "2rem", textAlign: "center" }}>
+        <h2>{waitingMessage}</h2>
+        <p>Players: {players.p1} vs {players.p2}</p>
       </div>
     );
   }
 
   return (
     <div style={{ padding: "2rem" }}>
-      <h1>Player 1: Choose a Word</h1>
+      <h1>{currentWordSetter}: Choose a Word</h1>
+      <p>Players: {players.p1} vs {players.p2}</p>
 
-      <input
-        type="text"
-        value={word}
-        onChange={(e) => setWord(e.target.value)}
-        style={{ padding: "0.5rem", width: "300px" }}
-        placeholder="Enter secret word"
-      />
+      <div style={{ marginBottom: "2rem" }}>
+        <h3>Option 1: Enter a Custom Word</h3>
+        <input
+          value={word}
+          onChange={(e) => setWord(e.target.value)}
+          placeholder="Enter secret word"
+          style={{ padding: "0.5rem", marginRight: "0.5rem", fontSize: "16px" }}
+        />
+        <button
+          onClick={submitCustomWord}
+          style={{ padding: "0.5rem 1rem", fontSize: "16px" }}
+        >
+          Submit Custom Word
+        </button>
+      </div>
 
-      <button
-        onClick={submitWord}
-        style={{ padding: "0.5rem 1rem", marginLeft: "1rem" }}
-      >
-        Submit Word
-      </button>
+      <div>
+        <h3>Option 2: Use Random Word from Database</h3>
+        <button
+          onClick={requestRandomWord}
+          style={{ padding: "0.5rem 1rem", fontSize: "16px" }}
+        >
+          Get Random Word
+        </button>
+      </div>
     </div>
   );
 }
