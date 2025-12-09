@@ -5,35 +5,60 @@ import socket from "../socket";
 export default function SetName() {
   const navigate = useNavigate();
   const [name, setName] = useState("");
-  const [hasName, setHasName] = useState(false);
-  const [status, setStatus] = useState("Welcome to Hangman! Please enter your name to start playing.");
+  const [status, setStatus] = useState("Welcome to Speed Card Game! Enter your name to start.");
+  const [isWaiting, setIsWaiting] = useState(false);
+  const [countdown, setCountdown] = useState(null);
 
   useEffect(() => {
-    // Server asks user to provide a name
-    socket.on("requestName", (msg) => setStatus(msg));
-
-    // Waiting for the other player
-    socket.on("waiting", (msg) => setStatus(msg));
-
-    // Both players have submitted names → navigate to SelectWord
-    socket.on("startSelectWord", () => {
-      setHasName(true);
-      navigate("/selectWord");
+    // Player successfully joined
+    socket.on("playerJoined", (data) => {
+      setStatus(`Welcome, ${data.name}! You are Player ${data.playerIndex + 1}.`);
+      setIsWaiting(true);
     });
 
-    // Handle reset from server
-    socket.on("reset", (message) => {
+    // Waiting for another player
+    socket.on("waitingForPlayer", () => {
+      setStatus("Waiting for another player to join...");
+    });
+
+    // Both players ready, show names
+    socket.on("bothPlayersReady", (data) => {
+      setStatus(`Game starting soon! ${data.player1Name} vs ${data.player2Name}`);
+    });
+
+    // Countdown started
+    socket.on("countdown", (count) => {
+      setCountdown(count);
+      setStatus(`Game starting in ${count}...`);
+    });
+
+    // Game started - navigate to game
+    socket.on("gameStarted", () => {
+      setCountdown(null);
+      navigate("/game");
+    });
+
+    // Handle errors
+    socket.on("error", (message) => {
       alert(message);
-      setHasName(false);
-      setName("");
-      setStatus("Game reset. Please enter your name to start a new game.");
+      setIsWaiting(false);
+    });
+
+    // Handle player disconnection
+    socket.on("playerDisconnected", () => {
+      setStatus("Other player disconnected. Waiting for a new player...");
+      setIsWaiting(false);
+      setCountdown(null);
     });
 
     return () => {
-      socket.off("requestName");
-      socket.off("waiting");
-      socket.off("startSelectWord");
-      socket.off("reset");
+      socket.off("playerJoined");
+      socket.off("waitingForPlayer");
+      socket.off("bothPlayersReady");
+      socket.off("countdown");
+      socket.off("gameStarted");
+      socket.off("error");
+      socket.off("playerDisconnected");
     };
   }, [navigate]);
 
@@ -44,101 +69,121 @@ export default function SetName() {
   };
 
   const submitName = () => {
-    if (name.trim() === "") return alert("Name cannot be empty!");
-    socket.emit("submitName", name);
-    setHasName(true);
+    if (name.trim() === "") {
+      alert("Name cannot be empty!");
+      return;
+    }
+
+    socket.emit("joinGame", name.trim());
+    setIsWaiting(true);
   };
 
-  // If user has NOT entered a name yet → show name input screen
-  if (!hasName) {
-    return (
-      <div style={{
-        padding: "2rem",
-        maxWidth: "500px",
-        margin: "0 auto",
-        textAlign: "center"
-      }}>
-        <h1>🎮 Hangman Game</h1>
-        <p style={{ fontSize: "18px", marginBottom: "2rem" }}>{status}</p>
-
-        <div style={{ marginBottom: "1rem" }}>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Enter your name..."
-            style={{
-              padding: "0.75rem",
-              width: "300px",
-              fontSize: "16px",
-              borderRadius: "5px",
-              border: "2px solid #ddd",
-              marginRight: "0.5rem"
-            }}
-            autoFocus
-          />
-          <button
-            onClick={submitName}
-            style={{
-              padding: "0.75rem 1.5rem",
-              fontSize: "16px",
-              backgroundColor: "#007bff",
-              color: "white",
-              border: "none",
-              borderRadius: "5px",
-              cursor: "pointer"
-            }}
-          >
-            Join Game
-          </button>
-        </div>
-
-        <div style={{
-          backgroundColor: "#f8f9fa",
-          padding: "1rem",
-          borderRadius: "5px",
-          marginTop: "2rem"
-        }}>
-          <h3>How to Play:</h3>
-          <ul style={{ textAlign: "left", maxWidth: "400px", margin: "0 auto" }}>
-            <li>Two players take turns setting words and guessing</li>
-            <li>Word setter can choose a custom word or get a random one</li>
-            <li>Guesser has 6 wrong attempts to guess the word</li>
-            <li>After both rounds, view the high scores!</li>
-          </ul>
-        </div>
-      </div>
-    );
-  }
-
-  // While waiting for the other player to submit a name
   return (
     <div style={{
-      padding: "2rem",
-      textAlign: "center",
-      maxWidth: "500px",
-      margin: "0 auto"
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: "100vh",
+      fontFamily: "Arial, sans-serif",
+      background: "linear-gradient(135deg, #1e3c72, #2a5298)",
+      color: "white"
     }}>
-      <h2>Waiting for Players</h2>
-      <p style={{ fontSize: "18px" }}>{status}</p>
-      <div style={{ marginTop: "2rem" }}>
-        <div className="spinner" style={{
-          border: "4px solid #f3f3f3",
-          borderTop: "4px solid #007bff",
-          borderRadius: "50%",
-          width: "50px",
-          height: "50px",
-          animation: "spin 2s linear infinite",
-          margin: "0 auto"
-        }}></div>
+      <h1 style={{ fontSize: "3em", marginBottom: "20px", textShadow: "2px 2px 4px rgba(0,0,0,0.5)" }}>
+        Speed Card Game
+      </h1>
+
+      <div style={{
+        background: "rgba(255,255,255,0.1)",
+        padding: "30px",
+        borderRadius: "15px",
+        textAlign: "center",
+        minWidth: "400px",
+        backdropFilter: "blur(10px)"
+      }}>
+        <p style={{ fontSize: "1.2em", marginBottom: "20px" }}>{status}</p>
+
+        {countdown && (
+          <div style={{
+            fontSize: "4em",
+            fontWeight: "bold",
+            color: "#FFD700",
+            textShadow: "2px 2px 4px rgba(0,0,0,0.5)",
+            animation: "pulse 1s infinite"
+          }}>
+            {countdown}
+          </div>
+        )}
+
+        {!isWaiting && !countdown && (
+          <div>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={handleKeyPress}
+              placeholder="Enter your name"
+              maxLength={20}
+              style={{
+                padding: "12px",
+                fontSize: "1.1em",
+                borderRadius: "8px",
+                border: "none",
+                marginBottom: "15px",
+                width: "250px",
+                textAlign: "center"
+              }}
+              autoFocus
+            />
+            <br />
+            <button
+              onClick={submitName}
+              style={{
+                padding: "12px 30px",
+                fontSize: "1.1em",
+                backgroundColor: "#4CAF50",
+                color: "white",
+                border: "none",
+                borderRadius: "8px",
+                cursor: "pointer",
+                transition: "background-color 0.3s"
+              }}
+              onMouseOver={(e) => e.target.style.backgroundColor = "#45a049"}
+              onMouseOut={(e) => e.target.style.backgroundColor = "#4CAF50"}
+            >
+              Join Game
+            </button>
+          </div>
+        )}
+
+        {isWaiting && !countdown && (
+          <div style={{ fontSize: "1.1em" }}>
+            <div style={{
+              border: "4px solid #f3f3f3",
+              borderTop: "4px solid #3498db",
+              borderRadius: "50%",
+              width: "40px",
+              height: "40px",
+              animation: "spin 2s linear infinite",
+              margin: "20px auto"
+            }}></div>
+          </div>
+        )}
       </div>
-      <style jsx>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
+
+      <style>
+        {`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+          @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+          }
+        `}
+      </style>
     </div>
   );
 }
